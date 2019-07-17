@@ -17,3 +17,5 @@
 .idea/messagebus-go-sdk.iml
 .idea/vcs.xml
 .idea/workspace.xml
+
+vendor/
