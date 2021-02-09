@@ -6,6 +6,7 @@ package messagebus
 
 const (
 	GDPR_DeletionAccount string = "GDPR_deletionAccount"
+	IAM_Ban              string = "IAM_Ban"
 )
 
 const (
