@@ -5,6 +5,8 @@
 package messagebus
 
 import (
+	"crypto/sha512"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +19,8 @@ import (
 
 	"time"
 )
+
+const saslScramAuth = "SASL-SCRAM"
 
 var (
 	rtoError = errors.New("request time out in publish with response")
@@ -34,6 +38,12 @@ type KafkaClient struct {
 	consumer      sarama.Consumer
 	broker        *sarama.Broker
 	realm         string
+}
+
+type SecurityConfig struct {
+	AuthenticationType string
+	SASLUsername       string
+	SASLPassword       string
 }
 
 // PublishBuilderEntry defines data structure to use with Kafka client
@@ -79,8 +89,20 @@ func (publishBuilderEntry *PublishBuilderEntry) Length() int {
 
 // NewKafkaClient create a new instance of KafkaClient
 func NewKafkaClient(brokerList []string, realm string) (*KafkaClient, error) {
+	return initKafkaClient(brokerList, realm, nil)
+}
+
+// NewKafkaClientWithAuthentication create a new instance of KafkaClient with Authentication
+func NewKafkaClientWithAuthentication(brokerList []string, realm string, securityConfig *SecurityConfig) (*KafkaClient, error) {
+	return initKafkaClient(brokerList, realm, securityConfig)
+}
+
+func initKafkaClient(brokerList []string, realm string, securityConfig *SecurityConfig) (*KafkaClient, error) {
 	config := sarama.NewConfig()
 	config.Version = sarama.V2_1_0_0
+	if securityConfig != nil && securityConfig.AuthenticationType == saslScramAuth {
+		configureSASLScramAuthentication(config, securityConfig)
+	}
 
 	// currently only support 1 message broker
 	broker := sarama.NewBroker(brokerList[0])
@@ -95,6 +117,9 @@ func NewKafkaClient(brokerList []string, realm string) (*KafkaClient, error) {
 	}
 
 	configAsync := sarama.NewConfig()
+	if securityConfig != nil && securityConfig.AuthenticationType == saslScramAuth {
+		configureSASLScramAuthentication(configAsync, securityConfig)
+	}
 
 	asyncProducer, err := sarama.NewAsyncProducer(brokerList, configAsync)
 	if err != nil {
@@ -104,6 +129,9 @@ func NewKafkaClient(brokerList []string, realm string) (*KafkaClient, error) {
 
 	configSync := sarama.NewConfig()
 	configSync.Producer.Return.Successes = true
+	if securityConfig != nil && securityConfig.AuthenticationType == saslScramAuth {
+		configureSASLScramAuthentication(configSync, securityConfig)
+	}
 	syncProducer, err := sarama.NewSyncProducer(brokerList, configSync)
 	if err != nil {
 		logrus.Error("unable to create sync producer in kafka : ", err)
@@ -129,6 +157,17 @@ func NewKafkaClient(brokerList []string, realm string) (*KafkaClient, error) {
 	go listenAsyncError(asyncProducer)
 	go cleanup(client)
 	return client, nil
+}
+
+func configureSASLScramAuthentication(config *sarama.Config, securityConfig *SecurityConfig) {
+	config.Net.SASL.Enable = true
+	config.Net.SASL.User = securityConfig.SASLUsername
+	config.Net.SASL.Password = securityConfig.SASLPassword
+	config.Net.SASL.Handshake = true
+	config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient { return &SCRAMClient{HashGeneratorFcn: sha512.New} }
+	config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
+	config.Net.TLS.Enable = true
+	config.Net.TLS.Config = &tls.Config{}
 }
 
 func cleanup(client *KafkaClient) {
