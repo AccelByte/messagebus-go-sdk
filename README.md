@@ -71,3 +71,18 @@ client.Register(
 		    MessageType("message type").
 		    Callback(func(message *Message, err error)))
 ```
+
+### Authentication
+
+#### SASL-SCRAM Authentication
+
+Example configuration:
+
+```
+securityConfig := &messagebus.SecurityConfig{
+    AuthenticationType: "SASL-SCRAM",
+    SASLUsername:       "username",
+    SASLPassword:       "password",
+}
+kafkaClient, err := messagebus.NewKafkaClientWithAuthentication("localhost:9092", "realmName", securityConfig)
+```
